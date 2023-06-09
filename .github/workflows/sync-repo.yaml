@@ -1,0 +1,85 @@
+name: CrowdStrike Automatic Image Pull
+
+on:
+  ## scheduled job at 5:30 UTC every sunday
+  schedule:
+    - cron: '30 5 * * 0'
+  ## manual trigger
+  # workflow_dispatch
+  ## on push
+  push:
+    branches: [ main ]
+
+permissions:
+      id-token: write
+      contents: read
+
+jobs:
+  crowdstrike-automatic-image-pull:
+    runs-on: ubuntu-latest
+
+    env:
+      FALCON_ART_USERNAME: ${{ secrets.FALCON_ART_USERNAME }}
+      FALCON_ART_PASSWORD: ${{ secrets.FALCON_ART_PASSWORD }}
+      FALCON_CLOUD_REGION: ${{ secrets.FALCON_CLOUD_REGION }}
+      REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
+      REGISTRY_REMOTE_REPO: falcon
+      # for x86 and aarch
+      NUMBER_OF_IMAGES_TO_TAKE_DAEMONSET: 2
+      # only the last one
+      NUMBER_OF_IMAGES_TO_TAKE_SIDECAR: 1
+
+    steps:
+    - uses: azure/docker-login@v1
+      with:
+        login-server: registry.crowdstrike.com
+        username: ${{ secrets.FALCON_ART_USERNAME }}
+        password: ${{ secrets.FALCON_ART_PASSWORD }}
+
+    - uses: azure/docker-login@v1
+      with:
+        login-server: ${{ secrets.REGISTRY_HOST }}
+        username: ${{ secrets.REGISTRY_USERNAME }}
+        password: ${{ secrets.REGISTRY_PASSWORD }}
+
+    - name: Download latest falcon sensor - DaemonSet
+      run: |
+        ### Find the latest sensor version
+        export REGISTRYBEARER=$(curl -X GET -s -u "${FALCON_ART_USERNAME}:${FALCON_ART_PASSWORD}" "https://registry.crowdstrike.com/v2/token?=${FALCON_ART_USERNAME}&scope=repository:$SENSORTYPE/$FALCON_CLOUD_REGION/release/falcon-sensor:pull&service=registry.crowdstrike.com" | jq -r '.token')
+        
+        export LAST_N_TAGS=$( \
+          curl -X GET -s -H "authorization: Bearer ${REGISTRYBEARER}" \
+          "https://registry.crowdstrike.com/v2/falcon-sensor/${FALCON_CLOUD_REGION}/release/falcon-sensor/tags/list" | \
+          jq -r ".tags[-$NUMBER_OF_IMAGES_TO_TAKE_DAEMONSET:][]" \
+        )
+
+        for tag in $LAST_N_TAGS
+        do
+          echo "Copying ${tag}"
+          FALCON_IMAGE_REPO="registry.crowdstrike.com/falcon-sensor/${FALCON_CLOUD_REGION}/release/falcon-sensor"
+
+          docker pull $FALCON_IMAGE_REPO:$tag
+          docker tag $FALCON_IMAGE_REPO:$tag $REGISTRY_HOST/$REGISTRY_REMOTE_REPO/falcon-sensor:$tag
+          docker push $REGISTRY_HOST/$REGISTRY_REMOTE_REPO/falcon-sensor:$tag
+        done
+    
+    - name: Download latest falcon container sensor - Sidecar
+      run: |
+        ### Find the latest sensor version
+        export REGISTRYBEARER=$(curl -X GET -s -u "${FALCON_ART_USERNAME}:${FALCON_ART_PASSWORD}" "https://registry.crowdstrike.com/v2/token?=${FALCON_ART_USERNAME}&scope=repository:$SENSORTYPE/$FALCON_CLOUD_REGION/release/falcon-sensor:pull&service=registry.crowdstrike.com" | jq -r '.token')
+        
+        export LAST_N_TAGS=$( \
+          curl -X GET -s -H "authorization: Bearer ${REGISTRYBEARER}" \
+          "https://registry.crowdstrike.com/v2/falcon-container/${FALCON_CLOUD_REGION}/release/falcon-sensor/tags/list" | \
+          jq -r ".tags[-$NUMBER_OF_IMAGES_TO_TAKE_SIDECAR:][]" \
+        )
+
+        for tag in $LAST_N_TAGS
+        do
+          echo "Copying ${tag}"
+          FALCON_IMAGE_REPO="registry.crowdstrike.com/falcon-container/${FALCON_CLOUD_REGION}/release/falcon-sensor"
+
+          docker pull $FALCON_IMAGE_REPO:$tag
+          docker tag $FALCON_IMAGE_REPO:$tag $REGISTRY_HOST/$REGISTRY_REMOTE_REPO/falcon-container:$tag
+          docker push $REGISTRY_HOST/$REGISTRY_REMOTE_REPO/falcon-container:$tag
+        done
