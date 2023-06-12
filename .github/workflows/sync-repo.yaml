@@ -53,7 +53,7 @@ jobs:
       # Sync to Repo config
       # YOUR TARGET REGISTRY and TARGET REPO TO SYNC
       REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
-      REGISTRY_REMOTE_REPO: falcon
+      REGISTRY_REMOTE_REPO: vendors/crowdstrike
       # for x86 and aarch
       NUMBER_OF_IMAGES_TO_TAKE_DAEMONSET: 2
       # only the last one
@@ -88,6 +88,11 @@ jobs:
     #   Numbers of images to download. The default is 2 so the x86 and aarch64 images will be download
     - name: Download latest Falcon sensor - DaemonSet
       run: |
+
+        # Use these login command if you are not user the azure/docker-login action
+        # echo "$FALCON_ART_PASSWORD" | docker login -u "$FALCON_ART_USERNAME" --password-stdin registry.crowdstrike.com
+        # echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin REGISTRY_HOST
+
         ### Find the latest sensor version
         export REGISTRYBEARER=$(curl -X GET -s -u "${FALCON_ART_USERNAME}:${FALCON_ART_PASSWORD}" "https://registry.crowdstrike.com/v2/token?=${FALCON_ART_USERNAME}&scope=repository:$SENSORTYPE/$FALCON_CLOUD_REGION/release/falcon-sensor:pull&service=registry.crowdstrike.com" | jq -r '.token')
         
@@ -123,6 +128,11 @@ jobs:
     #   Numbers of images to download. The default is 1
     - name: Download latest Falcon container sensor - Sidecar
       run: |
+        
+        # Use these login command if you are not user the azure/docker-login action
+        # echo "$FALCON_ART_PASSWORD" | docker login -u "$FALCON_ART_USERNAME" --password-stdin registry.crowdstrike.com
+        # echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin REGISTRY_HOST
+
         ### Find the latest sensor version
         export REGISTRYBEARER=$(curl -X GET -s -u "${FALCON_ART_USERNAME}:${FALCON_ART_PASSWORD}" "https://registry.crowdstrike.com/v2/token?=${FALCON_ART_USERNAME}&scope=repository:$SENSORTYPE/$FALCON_CLOUD_REGION/release/falcon-sensor:pull&service=registry.crowdstrike.com" | jq -r '.token')
         
@@ -158,7 +168,11 @@ jobs:
     - name: Download latest Falcon Kubernetes Protection
       run: |
         
-        ### Find the latest sensor version
+        # Use these login command if you are not user the azure/docker-login action
+        # echo "$FALCON_KPA_DOCKER_USERNAME" | docker login -u "$FALCON_KPA_DOCKER_PASSWORD" --password-stdin registry.crowdstrike.com
+        # echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin REGISTRY_HOST
+
+        ### Find the latest Kubernetes Protection Agent version
         export REGISTRYBEARER=$(curl -X GET -s -u "${FALCON_KPA_DOCKER_USERNAME}:${FALCON_KPA_DOCKER_PASSWORD}" "https://registry.crowdstrike.com/v2/token?=${FALCON_KPA_DOCKER_USERNAME}&scope=repository:kubernetes_protection/kpagent:pull&service=registry.crowdstrike.com" | jq -r '.token')
         FALCON_IMAGE_KPA_TAG=$(curl -X GET -s -H "authorization: Bearer ${REGISTRYBEARER}" "https://registry.crowdstrike.com/v2/kubernetes_protection/kpagent/tags/list" | jq -r '.tags[-1]')
         FALCON_IMAGE_KPA_REPO="registry.crowdstrike.com/kubernetes_protection/kpagent"
