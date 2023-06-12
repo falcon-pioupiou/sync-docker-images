@@ -19,9 +19,39 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      # ====================================================
+      # Falcon Sensor requirements
+      # FALCON_ART_USERNAME
+      #   login is using this format : fc-<your CID without checksum in lowercase>
       FALCON_ART_USERNAME: ${{ secrets.FALCON_ART_USERNAME }}
+
+      # FALCON_ART_PASSWORD
+      #   You have to use the CrowdStrike API to get your registry password
+      #   or use this script:
+      #   CrowdStrike API Client created with Falcon Images Download (read) AND Sensor Download (read) scope assigned 
+      #   export FALCON_CLIENT_ID=
+      #   export FALCON_CLIENT_SECRET=
+      #   curl https://raw.githubusercontent.com/CrowdStrike/falcon-scripts/main/bash/containers/falcon-container-sensor-pull/falcon-container-sensor-pull.sh | bash -s -- --dump-credentials
       FALCON_ART_PASSWORD: ${{ secrets.FALCON_ART_PASSWORD }}
+
+      # FALCON_CLOUD_REGION
       FALCON_CLOUD_REGION: ${{ secrets.FALCON_CLOUD_REGION }}
+
+      # ====================================================
+      # Falcon Kubernetes Protection
+      # REQUIRED PARAMETERS:
+      # FALCON_KPA_DOCKER_USERNAME
+      #   login is using this format kp-<your CID without checksum in lowercase>
+      FALCON_KPA_DOCKER_USERNAME: ${{ secrets.FALCON_KPA_DOCKER_USERNAME }}
+
+      # FALCON_KPA_DOCKER_PASSWORD
+      #   Go to Cloud Security > Account Registration > Kubernetes
+      #   Create a self-managed cluster and copy the DockerAPIToken
+      FALCON_KPA_DOCKER_PASSWORD: ${{ secrets.FALCON_KPA_DOCKER_PASSWORD }}
+
+      # ====================================================
+      # Sync to Repo config
+      # YOUR TARGET REGISTRY and TARGET REPO TO SYNC
       REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
       REGISTRY_REMOTE_REPO: falcon
       # for x86 and aarch
@@ -42,7 +72,21 @@ jobs:
         username: ${{ secrets.REGISTRY_USERNAME }}
         password: ${{ secrets.REGISTRY_PASSWORD }}
 
-    - name: Download latest falcon sensor - DaemonSet
+    # REQUIRED PARAMATERS
+    # FALCON_ART_USERNAME
+    #   login is using this format : fc-<your CID without checksum in lowercase>
+    # FALCON_ART_PASSWORD
+    #   You have to use the CrowdStrike API to get your registry password
+    #   or use this script:
+    #   CrowdStrike API Client created with Falcon Images Download (read) AND Sensor Download (read) scope assigned
+    #   export FALCON_CLIENT_ID=
+    #   export FALCON_CLIENT_SECRET=
+    #   curl https://raw.githubusercontent.com/CrowdStrike/falcon-scripts/main/bash/containers/falcon-container-sensor-pull/falcon-container-sensor-pull.sh | bash -s -- --dump-credentials
+    # FALCON_CLOUD_REGION
+    #   possible values : eu-1, us-1, us-2, us-gov-1
+    # NUMBER_OF_IMAGES_TO_TAKE_DAEMONSET
+    #   Numbers of images to download. The default is 2 so the x86 and aarch64 images will be download
+    - name: Download latest Falcon sensor - DaemonSet
       run: |
         ### Find the latest sensor version
         export REGISTRYBEARER=$(curl -X GET -s -u "${FALCON_ART_USERNAME}:${FALCON_ART_PASSWORD}" "https://registry.crowdstrike.com/v2/token?=${FALCON_ART_USERNAME}&scope=repository:$SENSORTYPE/$FALCON_CLOUD_REGION/release/falcon-sensor:pull&service=registry.crowdstrike.com" | jq -r '.token')
@@ -63,7 +107,21 @@ jobs:
           docker push $REGISTRY_HOST/$REGISTRY_REMOTE_REPO/falcon-sensor:$tag
         done
     
-    - name: Download latest falcon container sensor - Sidecar
+    # REQUIRED PARAMATERS
+    # FALCON_ART_USERNAME
+    #   login is using this format : fc-<your CID without checksum in lowercase>
+    # FALCON_ART_PASSWORD
+    #   You have to use the CrowdStrike API to get your registry password
+    #   or use this script:
+    #   CrowdStrike API Client created with Falcon Images Download (read) AND Sensor Download (read) scope assigned
+    #   export FALCON_CLIENT_ID=
+    #   export FALCON_CLIENT_SECRET=
+    #   curl https://raw.githubusercontent.com/CrowdStrike/falcon-scripts/main/bash/containers/falcon-container-sensor-pull/falcon-container-sensor-pull.sh | bash -s -- --dump-credentials
+    # FALCON_CLOUD_REGION
+    #   possible values : eu-1, us-1, us-2, us-gov-1
+    # NUMBER_OF_IMAGES_TO_TAKE_SIDECAR
+    #   Numbers of images to download. The default is 1
+    - name: Download latest Falcon container sensor - Sidecar
       run: |
         ### Find the latest sensor version
         export REGISTRYBEARER=$(curl -X GET -s -u "${FALCON_ART_USERNAME}:${FALCON_ART_PASSWORD}" "https://registry.crowdstrike.com/v2/token?=${FALCON_ART_USERNAME}&scope=repository:$SENSORTYPE/$FALCON_CLOUD_REGION/release/falcon-sensor:pull&service=registry.crowdstrike.com" | jq -r '.token')
@@ -83,3 +141,28 @@ jobs:
           docker tag $FALCON_IMAGE_REPO:$tag $REGISTRY_HOST/$REGISTRY_REMOTE_REPO/falcon-container:$tag
           docker push $REGISTRY_HOST/$REGISTRY_REMOTE_REPO/falcon-container:$tag
         done
+
+
+    - uses: azure/docker-login@v1
+      with:
+        login-server: registry.crowdstrike.com
+        username: ${{ secrets.FALCON_KPA_DOCKER_USERNAME }}
+        password: ${{ secrets.FALCON_KPA_DOCKER_PASSWORD }}
+
+    # REQUIRED PARAMETERS:
+    # FALCON_KPA_DOCKER_USERNAME
+    #   login is form kp-<your CID without checksum in lowercase>
+    # FALCON_KPA_DOCKER_PASSWORD
+    #   Go to Cloud Security > Account Registration > Kubernetes
+    #   Create a self-managed cluster and copy the DockerAPIToken
+    - name: Download latest Falcon Kubernetes Protection
+      run: |
+        
+        ### Find the latest sensor version
+        export REGISTRYBEARER=$(curl -X GET -s -u "${FALCON_KPA_DOCKER_USERNAME}:${FALCON_KPA_DOCKER_PASSWORD}" "https://registry.crowdstrike.com/v2/token?=${FALCON_KPA_DOCKER_USERNAME}&scope=repository:kubernetes_protection/kpagent:pull&service=registry.crowdstrike.com" | jq -r '.token')
+        FALCON_IMAGE_KPA_TAG=$(curl -X GET -s -H "authorization: Bearer ${REGISTRYBEARER}" "https://registry.crowdstrike.com/v2/kubernetes_protection/kpagent/tags/list" | jq -r '.tags[-1]')
+        FALCON_IMAGE_KPA_REPO="registry.crowdstrike.com/kubernetes_protection/kpagent"
+
+        docker pull $FALCON_IMAGE_KPA_REPO:$FALCON_IMAGE_KPA_TAG
+        docker tag $FALCON_IMAGE_KPA_REPO:$FALCON_IMAGE_KPA_TAG $REGISTRY_HOST/$REGISTRY_REMOTE_REPO/kpagent:$FALCON_IMAGE_KPA_TAG
+        docker push $REGISTRY_HOST/$REGISTRY_REMOTE_REPO/kpagent:$FALCON_IMAGE_KPA_TAG
